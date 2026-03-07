@@ -84,31 +84,40 @@
     }
 
     async function verifyStep() {
-      const storeId = document.getElementById('storeId').value.trim();
-      const staffId = document.getElementById('staffId').value.trim();
-      const msg = document.getElementById('msg1');
+  const storeId = document.getElementById('storeId').value.trim();
+  const staffId = document.getElementById('staffId').value.trim();
+  const msg = document.getElementById('msg1');
 
-      if (!storeId || !staffId) {
-        showMsg(msg, '店舗IDとスタッフIDを入力してください', 'error');
-        return;
-      }
+  if (!storeId || !staffId) {
+    showMsg(msg, '店舗IDとスタッフIDを入力してください', 'error');
+    return;
+  }
 
-      setLoading(true);
-      try {
-        const result = await callGAS({ action: 'verify', storeId, staffId });
-        if (result.success) {
-          document.getElementById('step1').style.display = 'none';
-          document.getElementById('step2').style.display = 'block';
-        } else {
-          showMsg(msg, result.msg, 'error');
-        }
-      } catch (err) {
-        showMsg(msg, 'エラー: ' + err.message, 'error');
-      } finally {
-        setLoading(false);
-      }
+  if (!userProfile || !userProfile.userId) {
+    showMsg(msg, 'LINEプロフィール取得失敗。再読み込みしてください。', 'error');
+    return;
+  }
+
+  setLoading(true);
+  try {
+    const result = await callGAS({ 
+      action: 'verify', 
+      storeId, 
+      staffId,
+      uid: userProfile.userId  // ★追加
+    });
+    if (result.success) {
+      document.getElementById('step1').style.display = 'none';
+      document.getElementById('step2').style.display = 'block';
+    } else {
+      showMsg(msg, result.msg, 'error');
     }
-
+  } catch (err) {
+    showMsg(msg, 'エラー: ' + err.message, 'error');
+  } finally {
+    setLoading(false);
+  }
+}
     async function registerStep() {
       const userName = document.getElementById('userName').value.trim();
       const msg = document.getElementById('msg2');
@@ -159,4 +168,5 @@
     }
   </script>
 </body>
+
 </html>
