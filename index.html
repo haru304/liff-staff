@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <base target="_top">
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
   <style>
@@ -14,6 +13,7 @@
     .msg.error { background: #ffe0e0; color: red; }
     .msg.success { background: #e0ffe0; color: green; }
     #step1, #step2, #step3 { display: none; }
+    #status { margin-top:20px; padding:10px; background:#f0f0f0; border-radius:5px; font-size:13px; }
   </style>
 </head>
 <body>
@@ -40,47 +40,49 @@
       <p id="completeMsg"></p>
     </div>
 
-    <div id="status" style="margin-top:20px; padding:10px; background:#f0f0f0; border-radius:5px;">
-      初期化中...
-    </div>
-
+    <div id="status">初期化中...</div>
     <div id="loading" style="display:none; text-align:center; margin-top:20px;">処理中...</div>
   </div>
 
   <script>
     const MY_LIFF_ID = "2009335817-sBOm84Pw";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbwHFgzr7x-Ax-_qZzztekA75Aset0tQgb0_0tJ140eEt5zO-a-0HE6oOljTMTY1Wo9Y/exec";
     let userProfile = null;
 
     function setStatus(msg) {
       document.getElementById('status').innerText = msg;
     }
 
-window.onload = async function() {
-  setStatus("① liff.init開始...");
+    window.onload = async function() {
+      setStatus("① liff.init開始...");
+      try {
+        await liff.init({ liffId: MY_LIFF_ID });
+        setStatus("② init成功 / ログイン: " + liff.isLoggedIn());
 
-  try {
-    await liff.init({ 
-      liffId: MY_LIFF_ID,
-      withLoginOnExternalBrowser: true  // ★これを追加
-    });
-    setStatus("② init成功 / ログイン: " + liff.isLoggedIn());
+        if (!liff.isLoggedIn()) {
+          setStatus("③ ログイン画面へ移動...");
+          liff.login();
+          return;
+        }
 
-    if (!liff.isLoggedIn()) {
-      setStatus("③ 未ログイン → ログイン画面へ");
-      liff.login();
-      return;
+        setStatus("④ プロフィール取得中...");
+        userProfile = await liff.getProfile();
+        setStatus("✅ 準備完了: " + userProfile.displayName);
+        document.getElementById('step1').style.display = 'block';
+
+      } catch (err) {
+        setStatus("❌ エラー: " + err.message);
+      }
+    };
+
+    async function callGAS(params) {
+      const res = await fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify(params)
+      });
+      return await res.json();
     }
 
-    setStatus("④ getProfile開始...");
-    userProfile = await liff.getProfile();
-    setStatus("✅ 準備完了: " + userProfile.displayName);
-
-    document.getElementById('step1').style.display = 'block';
-
-  } catch (err) {
-    setStatus("❌ エラー: " + err.message);
-  }
-};
     async function verifyStep() {
       const storeId = document.getElementById('storeId').value.trim();
       const staffId = document.getElementById('staffId').value.trim();
@@ -93,13 +95,7 @@ window.onload = async function() {
 
       setLoading(true);
       try {
-        const result = await new Promise((resolve, reject) => {
-          google.script.run
-            .withSuccessHandler(resolve)
-            .withFailureHandler(reject)
-            .verifyUserCode(storeId, staffId);
-        });
-
+        const result = await callGAS({ action: 'verify', storeId, staffId });
         if (result.success) {
           document.getElementById('step1').style.display = 'none';
           document.getElementById('step2').style.display = 'block';
@@ -121,7 +117,6 @@ window.onload = async function() {
         showMsg(msg, '名前を入力してください', 'error');
         return;
       }
-
       if (!userProfile || !userProfile.userId) {
         showMsg(msg, 'LINEプロフィール取得失敗。再読み込みしてください。', 'error');
         return;
@@ -129,23 +124,18 @@ window.onload = async function() {
 
       setLoading(true);
       try {
-        const result = await new Promise((resolve, reject) => {
-          google.script.run
-            .withSuccessHandler(resolve)
-            .withFailureHandler(reject)
-            .registerUser({
-              storeId: document.getElementById('storeId').value.trim(),
-              staffId: document.getElementById('staffId').value.trim(),
-              uid: userProfile.userId,
-              name: userName
-            });
+        const result = await callGAS({
+          action: 'register',
+          storeId: document.getElementById('storeId').value.trim(),
+          staffId: document.getElementById('staffId').value.trim(),
+          uid: userProfile.userId,
+          name: userName
         });
 
         if (result.success) {
           document.getElementById('step2').style.display = 'none';
           document.getElementById('step3').style.display = 'block';
-          document.getElementById('completeMsg').innerText =
-            userName + " さんの登録が完了しました！";
+          document.getElementById('completeMsg').innerText = userName + " さんの登録が完了しました！";
         } else {
           showMsg(msg, result.msg, 'error');
         }
