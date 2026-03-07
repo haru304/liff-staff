@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <style>
+    body { font-family: sans-serif; padding: 20px; background-color: #fff; }
+    .container { max-width: 400px; margin: 0 auto; }
+    input { width: 100%; padding: 10px; margin: 8px 0; box-sizing: border-box; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; }
+    button { width: 100%; padding: 12px; background-color: #06C755; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; }
+    button:disabled { background-color: #aaa; }
+    .msg { margin-top: 10px; padding: 10px; border-radius: 5px; display: none; }
+    .msg.error { background: #ffe0e0; color: red; }
+    .msg.success { background: #e0ffe0; color: green; }
+    #step1, #step2, #step3 { display: none; }
+    #status { margin-top:20px; padding:10px; background:#f0f0f0; border-radius:5px; font-size:13px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h3>スタッフ登録</h3>
+
+    <div id="step1">
+      <p>店舗IDとスタッフIDを入力してください</p>
+      <input type="text" id="storeId" placeholder="店舗ID">
+      <input type="text" id="staffId" placeholder="スタッフID">
+      <button id="btnVerify" onclick="verifyStep()">確認する</button>
+      <div id="msg1" class="msg"></div>
+    </div>
+
+    <div id="step2">
+      <p>あなたの名前を入力してください</p>
+      <input type="text" id="userName" placeholder="例: 山田 太郎">
+      <button id="btnRegister" onclick="registerStep()">登録する</button>
+      <div id="msg2" class="msg"></div>
+    </div>
+
+    <div id="step3">
+      <h3>✅ 登録完了！</h3>
+      <p id="completeMsg"></p>
+    </div>
+
+    <div id="status">初期化中...</div>
+    <div id="loading" style="display:none; text-align:center; margin-top:20px;">処理中...</div>
+  </div>
+
+  <script>
+    const MY_LIFF_ID = "2009335817-sBOm84Pw";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbwHFgzr7x-Ax-_qZzztekA75Aset0tQgb0_0tJ140eEt5zO-a-0HE6oOljTMTY1Wo9Y/exec";
+    let userProfile = null;
+
+    function setStatus(msg) {
+      document.getElementById('status').innerText = msg;
+    }
+
+    window.onload = async function() {
+      setStatus("① liff.init開始...");
+      try {
+        await liff.init({ liffId: MY_LIFF_ID });
+        setStatus("② init成功 / ログイン: " + liff.isLoggedIn());
+
+        if (!liff.isLoggedIn()) {
+          setStatus("③ ログイン画面へ移動...");
+          liff.login();
+          return;
+        }
+
+        setStatus("④ プロフィール取得中...");
+        userProfile = await liff.getProfile();
+        setStatus("✅ 準備完了: " + userProfile.displayName);
+        document.getElementById('step1').style.display = 'block';
+
+      } catch (err) {
+        setStatus("❌ エラー: " + err.message);
+      }
+    };
+
+    async function callGAS(params) {
+      const res = await fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify(params)
+      });
+      return await res.json();
+    }
+
+    async function verifyStep() {
+      const storeId = document.getElementById('storeId').value.trim();
+      const staffId = document.getElementById('staffId').value.trim();
+      const msg = document.getElementById('msg1');
+
+      if (!storeId || !staffId) {
+        showMsg(msg, '店舗IDとスタッフIDを入力してください', 'error');
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const result = await callGAS({ action: 'verify', storeId, staffId });
+        if (result.success) {
+          document.getElementById('step1').style.display = 'none';
+          document.getElementById('step2').style.display = 'block';
+        } else {
+          showMsg(msg, result.msg, 'error');
+        }
+      } catch (err) {
+        showMsg(msg, 'エラー: ' + err.message, 'error');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function registerStep() {
+      const userName = document.getElementById('userName').value.trim();
+      const msg = document.getElementById('msg2');
+
+      if (!userName) {
+        showMsg(msg, '名前を入力してください', 'error');
+        return;
+      }
+      if (!userProfile || !userProfile.userId) {
+        showMsg(msg, 'LINEプロフィール取得失敗。再読み込みしてください。', 'error');
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const result = await callGAS({
+          action: 'register',
+          storeId: document.getElementById('storeId').value.trim(),
+          staffId: document.getElementById('staffId').value.trim(),
+          uid: userProfile.userId,
+          name: userName
+        });
+
+        if (result.success) {
+          document.getElementById('step2').style.display = 'none';
+          document.getElementById('step3').style.display = 'block';
+          document.getElementById('completeMsg').innerText = userName + " さんの登録が完了しました！";
+        } else {
+          showMsg(msg, result.msg, 'error');
+        }
+      } catch (err) {
+        showMsg(msg, 'エラー: ' + err.message, 'error');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function showMsg(el, text, type) {
+      el.innerText = text;
+      el.className = 'msg ' + type;
+      el.style.display = 'block';
+    }
+
+    function setLoading(flag) {
+      document.getElementById('loading').style.display = flag ? 'block' : 'none';
+      document.getElementById('btnVerify').disabled = flag;
+      document.getElementById('btnRegister').disabled = flag;
+    }
+  </script>
+</body>
+</html>
