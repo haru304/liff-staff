@@ -12,42 +12,25 @@
     .msg { margin-top: 10px; padding: 10px; border-radius: 5px; display: none; }
     .msg.error { background: #ffe0e0; color: red; display: block; }
     .msg.success { background: #e0ffe0; color: green; display: block; }
-    #step1, #step2, #step3 { display: none; }
-    #status { margin-top:20px; padding:10px; background:#f0f0f0; border-radius:5px; font-size:13px; }
+    #step1, #step3 { display: none; }
+    #status { margin-top: 20px; padding: 10px; background: #f0f0f0; border-radius: 5px; font-size: 13px; }
   </style>
 </head>
 <body>
   <div class="container">
     <h3>スタッフ登録</h3>
 
-    <!-- step1: ID入力 -->
+    <!-- step1: 店舗ID・スタッフID・名前を入力して照合→登録 -->
     <div id="step1">
-      <p>店舗IDとスタッフIDを入力してください</p>
+      <p>店舗ID・スタッフID・名前を入力してください</p>
       <input type="text" id="storeId" placeholder="店舗ID">
       <input type="text" id="staffId" placeholder="スタッフID">
-      <button id="btnVerify" onclick="verifyStep()">確認する</button>
+      <input type="text" id="userName" placeholder="名前（例: 山田 太郎）">
+      <button id="btnVerify" onclick="verifyStep()">確認して登録する</button>
       <div id="msg1" class="msg"></div>
     </div>
 
-    <!-- step2: 名前確認 -->
-    <div id="step2">
-      <h3 style="margin-bottom:20px; text-align:center;">確認</h3>
-      <div style="background:#f9f9f9; border-radius:10px; padding:20px; text-align:center; border:1px solid #eee; margin-bottom:20px;">
-        <div style="font-size:13px; color:#888; margin-bottom:8px;">登録するアカウント</div>
-        <div id="confirmName" style="font-size:26px; font-weight:bold; color:#333; margin-bottom:5px;"></div>
-        <div id="confirmRole" style="font-size:12px; color:#aaa;"></div>
-      </div>
-      <p style="text-align:center; color:#555; font-size:14px; margin-bottom:20px;">あなたですか？</p>
-      <button id="btnRegister" onclick="registerStep()" style="margin-bottom:10px;">
-        ✅ はい、私です
-      </button>
-      <button onclick="backToStep1()" style="background:none; border:1px solid #ddd; color:#555;">
-        違います
-      </button>
-      <div id="msg2" class="msg"></div>
-    </div>
-
-    <!-- step3: 完了 -->
+    <!-- step3: 登録完了 -->
     <div id="step3">
       <h3>✅ 登録完了！</h3>
       <p id="completeMsg"></p>
@@ -61,7 +44,6 @@
     const MY_LIFF_ID = "2009335817-sBOm84Pw";
     const GAS_URL = "https://script.google.com/macros/s/AKfycbwHFgzr7x-Ax-_qZzztekA75Aset0tQgb0_0tJ140eEt5zO-a-0HE6oOljTMTY1Wo9Y/exec";
     let userProfile = null;
-    let confirmedName = '';
 
     function setStatus(msg) {
       document.getElementById('status').innerText = msg;
@@ -100,10 +82,11 @@
     async function verifyStep() {
       const storeId = document.getElementById('storeId').value.trim();
       const staffId = document.getElementById('staffId').value.trim();
+      const userName = document.getElementById('userName').value.trim();
       const msg = document.getElementById('msg1');
 
-      if (!storeId || !staffId) {
-        showMsg(msg, '店舗IDとスタッフIDを入力してください', 'error');
+      if (!storeId || !staffId || !userName) {
+        showMsg(msg, '全ての項目を入力してください', 'error');
         return;
       }
       if (!userProfile || !userProfile.userId) {
@@ -113,64 +96,40 @@
 
       setLoading(true);
       try {
-        const result = await callGAS({
+        // 店舗ID・スタッフID・名前の3点照合
+        const verifyResult = await callGAS({
           action: 'verify',
+          storeId,
+          staffId,
+          uid: userProfile.userId,
+          name: userName
+        });
+
+        if (!verifyResult.success) {
+          showMsg(msg, verifyResult.msg, 'error');
+          return;
+        }
+
+        // 照合OK → LINE ID紐付けて登録
+        const registerResult = await callGAS({
+          action: 'register',
           storeId,
           staffId,
           uid: userProfile.userId
         });
-        if (result.success) {
-          // 名前を確認画面に表示
-          confirmedName = result.name || '（名前未設定）';
-          document.getElementById('confirmName').innerText = confirmedName;
-          document.getElementById('confirmRole').innerText = result.role === 'admin' ? '管理者' : 'スタッフ';
+
+        if (registerResult.success) {
           document.getElementById('step1').style.display = 'none';
-          document.getElementById('step2').style.display = 'block';
-        } else {
-          showMsg(msg, result.msg, 'error');
-        }
-      } catch (err) {
-        showMsg(msg, 'エラー: ' + err.message, 'error');
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    async function registerStep() {
-      const msg = document.getElementById('msg2');
-      if (!userProfile || !userProfile.userId) {
-        showMsg(msg, 'LINEプロフィール取得失敗。再読み込みしてください。', 'error');
-        return;
-      }
-
-      setLoading(true);
-      try {
-        const result = await callGAS({
-          action: 'register',
-          storeId: document.getElementById('storeId').value.trim(),
-          staffId: document.getElementById('staffId').value.trim(),
-          uid: userProfile.userId
-        });
-
-        if (result.success) {
-          document.getElementById('step2').style.display = 'none';
           document.getElementById('step3').style.display = 'block';
-          document.getElementById('completeMsg').innerText = confirmedName + " さんの登録が完了しました！";
+          document.getElementById('completeMsg').innerText = userName + ' さんの登録が完了しました！';
         } else {
-          showMsg(msg, result.msg, 'error');
+          showMsg(msg, registerResult.msg, 'error');
         }
       } catch (err) {
         showMsg(msg, 'エラー: ' + err.message, 'error');
       } finally {
         setLoading(false);
       }
-    }
-
-    function backToStep1() {
-      document.getElementById('step2').style.display = 'none';
-      document.getElementById('step1').style.display = 'block';
-      document.getElementById('msg1').className = 'msg';
-      confirmedName = '';
     }
 
     function showMsg(el, text, type) {
@@ -181,7 +140,6 @@
     function setLoading(flag) {
       document.getElementById('loading').style.display = flag ? 'block' : 'none';
       document.getElementById('btnVerify').disabled = flag;
-      document.getElementById('btnRegister').disabled = flag;
     }
   </script>
 </body>
